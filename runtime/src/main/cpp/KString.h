@@ -29,6 +29,8 @@ extern "C" {
 OBJ_GETTER(CreateStringFromCString, const char* cstring);
 OBJ_GETTER(CreateStringFromUtf8, const char* utf8, uint32_t size);
 
+OBJ_GETTER(KonanObjectToUtf8Array, KRef object);
+
 #ifdef __cplusplus
 }
 #endif

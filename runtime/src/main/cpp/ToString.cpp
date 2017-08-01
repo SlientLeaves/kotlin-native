@@ -23,46 +23,50 @@
 #include "Memory.h"
 #include "Natives.h"
 #include "KString.h"
+#include "Porting.h"
 #include "Types.h"
 
 namespace {
 
-  char int_to_digit(uint32_t value) {
-    if (value < 10) {
-        return '0' + value;
-    } else {
-        return 'a' + (value - 10);
-    }
-  }
-
-  // Radix is checked on the Kotlin side.
-  template <typename T> OBJ_GETTER(Kotlin_toStringRadix, T value, KInt radix) {
-    if (value == 0) {
-      RETURN_RESULT_OF(CreateStringFromCString, "0");
-    }
-    char cstring[sizeof(T) * CHAR_BIT + 1];
-    bool negative = (value < 0);
-    if  (!negative) {
-      value = -value;
-    }
-
-    int32_t length = 0;
-    while (value < 0) {
-      cstring[length++] = int_to_digit(-(value % radix));
-      value /= radix;
-    }
-    if (negative) {
-      cstring[length++] = '-';
-    }
-    for (int i = 0, j = length - 1; i < j; i++, j--) {
-      char tmp = cstring[i];
-      cstring[i] = cstring[j];
-      cstring[j] = tmp;
-    }
-    cstring[length] = '\0';
-    RETURN_RESULT_OF(CreateStringFromCString, cstring);
+char int_to_digit(uint32_t value) {
+  if (value < 10) {
+    return '0' + value;
+  } else {
+    return 'a' + (value - 10);
   }
 }
+
+// Radix is checked on the Kotlin side.
+template <typename T> OBJ_GETTER(Kotlin_toStringRadix, T value, KInt radix) {
+  if (value == 0) {
+    RETURN_RESULT_OF(CreateStringFromCString, "0");
+  }
+  char cstring[sizeof(T) * CHAR_BIT + 1];
+  bool negative = (value < 0);
+  if  (!negative) {
+    value = -value;
+  }
+
+  int32_t length = 0;
+  while (value < 0) {
+    cstring[length++] = int_to_digit(-(value % radix));
+    value /= radix;
+  }
+  if (negative) {
+    cstring[length++] = '-';
+  }
+  for (int i = 0, j = length - 1; i < j; i++, j--) {
+    char tmp = cstring[i];
+    cstring[i] = cstring[j];
+    cstring[j] = tmp;
+  }
+  cstring[length] = '\0';
+  RETURN_RESULT_OF(CreateStringFromCString, cstring);
+}
+
+char debugBuffer[1024];
+
+}  // namespace
 
 extern "C" {
 
@@ -113,21 +117,29 @@ OBJ_GETTER(Kotlin_Long_toStringRadix, KLong value, KInt radix) {
   RETURN_RESULT_OF(Kotlin_toStringRadix<KLong>, value, radix)
 }
 
-// TODO: use David Gay's dtoa() here instead. It's *very* big and ugly.
-OBJ_GETTER(Kotlin_Float_toString, KFloat value) {
-  char cstring[32];
-  snprintf(cstring, sizeof(cstring), "%G", value);
-  RETURN_RESULT_OF(CreateStringFromCString, cstring);
+// Buffer that can be used by debugger for inspections.
+RUNTIME_USED char* Konan_DebugBuffer() {
+  return debugBuffer;
 }
 
-OBJ_GETTER(Kotlin_Double_toString, KDouble value) {
-  char cstring[32];
-  snprintf(cstring, sizeof(cstring), "%G", value);
-  RETURN_RESULT_OF(CreateStringFromCString, cstring);
+RUNTIME_USED int Konan_DebugBufferSize() {
+  return sizeof(debugBuffer);
 }
 
-OBJ_GETTER(Kotlin_Boolean_toString, KBoolean value) {
-  RETURN_RESULT_OF(CreateStringFromCString, value ? "true" : "false");
+// Auxilary function which can be called by developer/debugger to inspect an object.
+RUNTIME_USED KInt Konan_DebugObjectToUtf8Array(KRef obj, char* buffer, KInt bufferSize) {
+  ObjHolder stringHolder;
+  auto data = KonanObjectToUtf8Array(obj, stringHolder.slot())->array();
+  KInt toCopy = data->count_ > bufferSize - 1 ? bufferSize - 1 : data->count_;
+  memcpy(buffer, ByteArrayAddressOfElementAt(data, 0), toCopy);
+  buffer[toCopy + 1] = '\0';
+  return toCopy + 1;
+}
+
+RUNTIME_USED KInt Konan_DebugPrint(KRef obj) {
+  KInt size = Konan_DebugObjectToUtf8Array(obj, Konan_DebugBuffer(), Konan_DebugBufferSize());
+  konan::consoleWriteUtf8(Konan_DebugBuffer(), size - 1);
+  return 0;
 }
 
 } // extern "C"
